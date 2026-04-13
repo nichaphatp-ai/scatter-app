@@ -31,10 +31,13 @@ def create_excel_bytes(df: pd.DataFrame) -> io.BytesIO:
     # add one series per column after the first
     for col_idx in range(1, len(df.columns)):
         col_letter = chr(ord('A') + col_idx)
-        # choose color based on specific columns
-        if col_letter == 'F':
+        # Set color rules:
+        # Column C (col_idx==2) -> Red
+        # Column J (col_idx==9) -> Black
+        # Column H (col_idx==7) -> Orange (same as others)
+        if col_letter == 'C':
             color = 'red'
-        elif col_letter == 'H':
+        elif col_letter == 'J':
             color = 'black'
         else:
             color = '#FFC000'  # use specified orange hex
@@ -54,6 +57,7 @@ def create_excel_bytes(df: pd.DataFrame) -> io.BytesIO:
     chart.set_y_axis({
         'name': 'Intensity (a.u.)',
         'major_gridlines': {'visible': False},
+        'min': 0,
     })
     # explicitly turn off legend
     chart.set_legend({'none': True})
@@ -65,20 +69,34 @@ def create_excel_bytes(df: pd.DataFrame) -> io.BytesIO:
 
 
 def main():
-    st.title("Data \u2192 Excel Scatter Chart")
+    st.title(".dat to Excel Scatter Chart")
 
-    uploaded = st.file_uploader("Upload a CSV or Excel file", type=["csv", "xlsx", "xls"])
+    uploaded = st.file_uploader("Upload a .dat, CSV, or Excel file", type=["dat", "csv", "xlsx", "xls"])
     if not uploaded:
-        st.info("Please upload a CSV or Excel file to continue.")
+        st.info("Please upload a .dat, CSV, or Excel file to continue.")
         return
 
-    # determine file type from extension (uploaded may not have a name field in some cases)
     filename = getattr(uploaded, "name", "")
     try:
-        if filename.lower().endswith(('.xlsx', '.xls')):
+        if filename.lower().endswith((".xlsx", ".xls")):
             df = pd.read_excel(uploaded)
-        else:
+        elif filename.lower().endswith(".csv"):
             df = pd.read_csv(uploaded)
+        elif filename.lower().endswith(".dat"):
+            # Try to parse .dat file (assume whitespace or tab delimited, skip comment lines)
+            content = uploaded.read().decode(errors="ignore")
+            # Remove comment lines (starting with # or ";")
+            lines = [line for line in content.splitlines() if line.strip() and not line.strip().startswith(("#", ";"))]
+            # Try to detect delimiter (tab or whitespace)
+            import csv
+            import io as _io
+            sample = "\n".join(lines[:10])
+            dialect = csv.Sniffer().sniff(sample, delimiters="\t ,;")
+            delimiter = dialect.delimiter
+            df = pd.read_csv(_io.StringIO("\n".join(lines)), delimiter=delimiter)
+        else:
+            st.error("Unsupported file type.")
+            return
     except Exception as exc:
         st.error(f"Failed to read file: {exc}")
         return
@@ -87,7 +105,7 @@ def main():
     st.dataframe(df)
 
     if df.shape[1] < 2:
-        st.error("CSV needs at least two columns for X/Y data.")
+        st.error("Data needs at least two columns for X/Y data.")
         return
 
     excel_bytes = create_excel_bytes(df)
